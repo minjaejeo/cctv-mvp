@@ -1,7 +1,7 @@
 import json
 
-GT_PATH = 'gt.json'
-SA_PATH = 'sa.json'
+GT_PATH = 'gt.json' # 정답
+SA_PATH = 'sa.json' # 내 결과
 
 # 정상검출 시간 윈도우 (예: GT 기준으로 -2초에서 +10초 허용) 나중에 변경 가능
 EARLY = 2.0
@@ -49,4 +49,4 @@ r = tp / (tp + fn) if (tp + fn) else 0.0 # Recall (재현율): 정답 중 맞춘
 f1 = (2*p*r/(p+r)) if (p+r) else 0.0 # F1 Score: Precision과 Recall의 조화 평균
 
 print(f"TP: {tp}, FP: {fp}, FN: {fn}")
-print(f"Precision={p: .3f}, Recall={r:.3f}, F1={f1*100:.2f}")
+print(f"Precision={p:.3f}, Recall={r:.3f}, F1={f1*100:.2f}")
