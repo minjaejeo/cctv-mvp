@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "video_id": "138564-769988151_medium.mp4",
+    "event_type": "intrusion",
+    "event_time_sec": 0.033
+  }
+]

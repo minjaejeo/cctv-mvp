@@ -8,16 +8,19 @@ DEVICE = 0 if torch.cuda.is_available() else "cpu"
 print("DEVICE = ", DEVICE)
 
 
-VIDEO_PATH = "video.mp4"
+# VIDEO_PATH = "video.mp4"
+# VIDEO_PATH = "video_yolo_test.mp4"
+VIDEO_PATH = "138564-769988151_medium.mp4"
 OUT_SA_PATH = "sa_ver3.json" # 내 결과
 
 # ROI (오른쪽 30%) 가정
 INTRUSION_REGION_X_RATIO = 0.7
 
-HIT_FRAMES = 5 # 사람이 ROI에 들어와서 연속 5프레임 나오면 진짜 이벤트로 측정을 위한 값
+# HIT_FRAMES = 5 # 사람이 ROI에 들어와서 연속 5프레임 나오면 진짜 이벤트로 측정을 위한 값
+HIT_FRAMES = 2 # 사람이 ROI에 들어와서 연속 5프레임 나오면 진짜 이벤트로 측정을 위한 값
 COOLDOWN_SEC = 5.0 # 이벤트 한 번 찍으면 5초 동안 다시 안 찍기 위한 값
-CONF_THRES = 0.35 # YOLO 신뢰도 임계값 ("사람이 맞다"라고 확신하는 값이 0.35)
-
+# CONF_THRES = 0.35 # YOLO 신뢰도 임계값 ("사람이 맞다"라고 확신하는 값이 0.35)
+CONF_THRES = 0.15
 # 사람이 오른쪽 영역에 들어왔는지 판단하는 함수
 def in_roi(box, x_cut):
     # YOLO가 찾은 사람 box: (x1, y1, x2, y2)
@@ -55,7 +58,9 @@ def main():
 
         # YOLO 추론 ("이 프레임에서 물체를 찾아라")
         results = model.predict(frame, device=DEVICE, conf=CONF_THRES, verbose=False)
-
+        # 디버그용
+        person_count = 0
+        best_person = None
         # 사람 탐지 여부 + ROI 안인지 판단
         person_in_roi = False # 최종 판단 결과
         for r in results:
@@ -66,11 +71,18 @@ def main():
             for cls_id, conf, xyxy in zip(r.boxes.cls.tolist(),
                                           r.boxes.conf.tolist(),
                                           r.boxes.xyxy.tolist()):
+                if int(cls_id) == 0:
+                    person_count += 1
+                    if best_person is None or conf > best_person[0]:
+                        best_person = (conf, tuple(xyxy))
+
                 if int(cls_id) == 0 and conf >= CONF_THRES: # "사람"이고 "확신도가 기준 이상이면"
                     x1, y1, x2, y2 = xyxy
                     if in_roi((x1, y1, x2, y2), x_cut): # 좌표 뽑아서 ROI 안인지 확인
                         person_in_roi = True # 한 명이라도 ROI 안이면 TRUE
                         break
+            if frame_idx % 30 == 0 :
+                print(f"[frame {frame_idx}] person_count={person_count}, best_person={best_person}")
             if person_in_roi:
                 break
 

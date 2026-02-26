@@ -12,3 +12,8 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# videos
+*.mp4
+*.avi
+*.mov
