@@ -42,6 +42,7 @@ CCTV_MVP
 │
 │
 ├── requirements.txt
+├── README.md
 └── .gitignore
 ```
 
