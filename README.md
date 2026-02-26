@@ -47,6 +47,13 @@ CCTV_MVP
 
 ---
 
+## Test Video
+
+Download a sample video from:
+(https://pixabay.com/ko/videos/%ec%82%ac%eb%9e%8c%eb%93%a4-%ea%b1%b7%eb%8a%94-%ec%8b%a4%eb%a3%a8%ec%97%a3-%ec%a0%9c%eb%b0%a9-138564/)
+
+---
+
 ## ⚙️ Installation
 
 ### 1️⃣ Python Version
