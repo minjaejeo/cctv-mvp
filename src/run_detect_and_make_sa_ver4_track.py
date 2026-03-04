@@ -1,10 +1,13 @@
 import os, json, time
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional # 변수 지정
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
 
 import cv2 # 영상 읽기/쓰기 + 선/글씨/박스 그리기
 import torch # GPU(CUDA) 사용 가능 여부 확인
 from ultralytics import YOLO # YOLOv8 모델 로드 + 탐지/추적
+from shapely.geometry import Point, Polygon
 
 """
 Config (설정값)
@@ -16,7 +19,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
 
 SOURCE = os.path.join(ROOT_DIR, "data", "138564-769988151_medium.mp4")
-OUT_SA_PATH = os.path.join(ROOT_DIR, "data", "sa_ver4.json") # 이벤트 결과 저장
+OUT_SA_JSON_PATH = os.path.join(ROOT_DIR, "data", "sa_ver4.json") # 이벤트 결과 저장
+OUT_SA_XML_PATH = os.path.join(ROOT_DIR, "data", "sa_ver4.xml") # 이벤트 결과 저장
 OUT_VIDEO_PATH = os.path.join(ROOT_DIR, "data", "vis_ver4.mp4") # 시각화 결과 저장
 
 MODEL_PATH = os.path.join(ROOT_DIR, "models", "yolov8n.pt") # YOLO 모델 파일
@@ -39,9 +43,16 @@ TRACKER_CFG = "bytetrack.yaml" # ultralytics 내장 (YOLO 탐지 결과를 "같�
 """
 Helpers (자주 쓰는 작은 함수들)
 """
+def in_roi_full_body(x1: float, x_cut: int) -> bool:
+    """
+    중심점 기준이 아니라 전신 기준으로 수정
+    사람 박스의 왼쪽 끝(x1)이 경계선을 완전히 넘었을 때
+    """
+    return x1 >= x_cut
+
 # 사람 박스의 중심 x 좌표(cx)가 x_cut보다 오른쪽이면 ROI 안이라고 판단하는 함수
-def in_roi(cx: float, x_cut: int) -> bool:
-    return cx >= x_cut
+# def in_roi(cx: float, x_cut: int) -> bool:
+#     return cx >= x_cut
 
 # YOLO 박스는 왼쪽위(x1,y1), 오른쪽아래(x2,y2) => (cx,cy) 중심점 구하는 함수
 def bbox_center_xyxy(xyxy) -> Tuple[float, float]:
@@ -72,6 +83,45 @@ def emit(sa_events: list, video_id: str, event_type: str, t: float, track_id: in
     if extra:
         e.update(extra)
     sa_events.append(e)
+
+def sec_to_hhmmss(sec: float) -> str:
+    """초 -> HH:MM:SS 문자열로 변환"""
+    sec = int(sec)
+    h = sec // 3600
+    m = (sec % 3600) // 60
+    s = sec % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+def save_sa_xml(sa_events: list, out_path: str, video_filename: str):
+    """KISA XML 형식으로 SA 파일 저장"""
+    EVENT_NAME_MAP = {
+        "intrusion": "Intrusion",
+        "loitering": "Loitering",
+        "line_crossing": "Intrusion"
+    }
+
+    root = ET.Element("KisaLibraryIndex")
+    library = ET.SubElement(root, "Library")
+    clip = ET.SubElement(library, "Clip")
+
+    header = ET.SubElement(clip, "Header")
+    ET.SubElement(header, "AlarmEvents").text = str(len(sa_events))
+    ET.SubElement(header, "Filename").text = video_filename
+
+    alarms = ET.SubElement(clip, "Alarms")
+    for event in sa_events:
+        alarm = ET.SubElement(alarms, "Alarm")
+        ET.SubElement(alarm, "StartTime").text = sec_to_hhmmss(event["event_time_sec"])
+        kisa_name = EVENT_NAME_MAP.get(event["event_type"], event["event_type"])
+        ET.SubElement(alarm, "AlarmDescription").text = kisa_name
+        ET.SubElement(alarm, "AlarmDuration").text = "00:00:00"
+
+    raw_str = ET.tostring(root, encoding="unicode")
+    pretty_str = minidom.parseString(raw_str).toprettyxml(indent="  ")
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(pretty_str)
+    print(f"SA XML 저장 완료: {out_path}")
 
 # 사람 1명마다 상태 저장
 @dataclass
@@ -147,7 +197,12 @@ def main():
             for track_id, xyxy, conf in zip(ids, xyxys, confs):
                 track_id = int(track_id)
                 cx, cy = bbox_center_xyxy(xyxy)
-                st = tracks.get(track_id, TrackState())
+                x1_f = xyxy[0] # 바운딩박스 왼쪽 끝 (float)
+                # st = tracks.get(track_id, TrackState()) # 새 사람이 있든 없든 매번 새로 만드는 오류 (메모리 낭비)
+                # 새 사람일 때만 TrackState() 생성
+                if track_id not in tracks:
+                    tracks[track_id] = TrackState()
+                st = tracks[track_id]
                 st.last_seen_t = t
                 st.last_seen_frame = frame_idx
 
@@ -160,14 +215,20 @@ def main():
                 st.last_cx = cx
 
                 # ROI hit logic (ROI 안이면 hit 증가, 밖이면 hit 초기화)
-                if in_roi(cx, x_cut):
+                # if in_roi(cx, x_cut):
+                #     st.in_roi_hit += 1
+                #     if st.roi_enter_t is None:
+                #         st.roi_enter_t = t
+                # 왼쪽 끝 경계선을 기준으로 완전히 넘었을 경우로 수정
+                if in_roi_full_body(x1_f, x_cut):
                     st.in_roi_hit += 1
                     if st.roi_enter_t is None:
                         st.roi_enter_t = t
-
                 else:
                     st.in_roi_hit = 0
                     st.roi_enter_t = None
+                    st.intrusion_emitted = False # ROI 나가면 다시 감지 가능하게
+                    st.loiter_emitted = False # 배회도 ROI 나가면 다시 감지 가능하게
 
                 # intrusion (진입 이벤트 1회)
                 if (not st.intrusion_emitted) and st.in_roi_hit >= HIT_FRAMES and (t - st.last_event_t) >= COOLDOWN_SEC:
@@ -183,7 +244,7 @@ def main():
                         st.loiter_emitted = True
                         st.last_event_t = t
                 # 상태 저장
-                tracks[track_id] = st
+                # tracks[track_id] = st
 
                 # 박스와 ID 그리기
                 draw_box(frame, xyxy, track_id, color=(0, 255, 0))
@@ -193,15 +254,17 @@ def main():
                 last = sa_events[-1]
                 cv2.putText(frame, f"EVENT: {last['event_type']} ID={last['track_id']} t={last['event_time_sec']}", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,0,255), 2)
 
-            writer.write(frame)
+        writer.write(frame)
 
     cap.release()
     writer.release()
 
-    with open(OUT_SA_PATH, "w", encoding="utf-8") as f:
+    with open(OUT_SA_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(sa_events, f, ensure_ascii=False, indent=2)
 
-    print("SA saved: ", OUT_SA_PATH, "events= ", len(sa_events))
+    save_sa_xml(sa_events, OUT_SA_XML_PATH, video_id)
+
+    print("SA saved: ", OUT_SA_XML_PATH, "events= ", len(sa_events))
     print("VIS saved: ", OUT_VIDEO_PATH)
     print("elapsed(sec)=", round(time.time() - start_wall, 2))
 
