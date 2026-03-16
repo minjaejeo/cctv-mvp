@@ -123,6 +123,54 @@ def save_sa_xml(sa_events: list, out_path: str, video_filename: str):
         f.write(pretty_str)
     print(f"SA XML 저장 완료: {out_path}")
 
+def load_map_polygons(map_path: str) -> dict:
+    """
+    KISA Map XML 파일을 읽어서
+    { 태그이름: Polygon 객체 } 딕셔너리로 반환
+
+    반환 예시: 
+    {
+        "DetectArea": Polygon([(6,475), (958,155), ...]),
+        "Intrusion": Polygon([(200, 300), (800, 300), ...]),
+        ...
+    }
+    """
+
+    # Map 파일이 없으면 빈 딕셔너리 반환 (fallback용)
+    if not os.path.exists(map_path):
+        print(f"[경고] Map 파일 없음: {map_path} -> 기본 ROI 사용")
+        return {}
+    tree = ET.parse(map_path)
+    root = tree.getroot()
+
+    # KISA에서 정의한 영역 태그 목록
+    AREA_TAGS = [
+        "DetectArea", # 전체 감지 영역
+        "Intrusion", # 침입 영역
+        "Loitering", # 배회 영역
+        "Abandonment", # 유기 영역
+        "Fight", # 싸움 영역
+    ]
+    
+    polygons = {}
+
+    for tag in AREA_TAGS:
+        # XML에서 해당 태그 찾기
+        # find()는 없으면 None 반환
+        element = root.find(f".//{tag}") # // = 하위 어디서든 찾기
+        if element is Nons:
+            continue # 이 태그가 없으면 건너뜀
+
+        points = []
+        for point_elem in element.findall("Point"):
+            # "958, 155" -> ["958", "155"] -> (958, 155)
+            x_str, y_str = point_elem.text.strip().split(",")
+            points.append((int(x_str), int(y_str)))
+
+        if len(points) < 3:
+            print(f"[Map] {tag} 로드 완료: {len(points)}개 꼭짓점")
+    return polygons
+
 # 사람 1명마다 상태 저장
 @dataclass
 class TrackState:
