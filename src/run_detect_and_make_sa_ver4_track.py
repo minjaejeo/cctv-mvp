@@ -171,6 +171,46 @@ def load_map_polygons(map_path: str) -> dict:
             print(f"[Map] {tag} 로드 완료: {len(points)}개 꼭짓점")
     return polygons
 
+def person_in_polygon(xyxy, polygon: Polygon) -> bool:
+
+    """
+    KISA 기준: '사람의 몸 전체가 영역 안에 있을 때'
+    -> 박스의 네 꼭짓점이 모두 다각형 안에 있으면 True
+
+    [박스 꼭짓점 4개]
+    (x1, y1) ---- (x2, y1)
+        :           :
+        :           :
+    (x1, y2) ---- (x2, y2)
+
+    4개 중 하나라도 밖에 있으면 False
+    """
+
+    x1, y1, x2, y2 = xyxy
+
+    corners = [
+        (x1, y1), # 왼쪽 위
+        (x2, y1), # 오른쪽 위
+        (x1, y2), # 왼쪽 위
+        (x2, y2), # 오른쪽 아래
+    ]
+    return all(polygon.contains(Point(px, py)) for px, py in corners)
+
+def person_entering_polygon(xyxy, polygon: Polygon) -> bool:
+    """
+    '진입 중' 판정
+    -> 사람 중심점이 다각형 안에 있으면 True
+    
+    차이
+    persona_in_polygon: 완전히 들어왔을 때
+    person_entering_polygon: 들어오기 시작했을 때
+    """
+
+    x1, y1, x2, y2 = xyxy
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    return polygon.contains(Point(cx, cy))
+
 # 사람 1명마다 상태 저장
 @dataclass
 class TrackState:
