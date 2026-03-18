@@ -159,7 +159,7 @@ def load_map_polygons(map_path: str) -> dict:
         # XML에서 해당 태그 찾기
         # find()는 없으면 None 반환
         element = root.find(f".//{tag}") # // = 하위 어디서든 찾기
-        if element is Nons:
+        if element is None:
             continue # 이 태그가 없으면 건너뜀
 
         points = []
@@ -169,7 +169,10 @@ def load_map_polygons(map_path: str) -> dict:
             points.append((int(x_str), int(y_str)))
 
         if len(points) < 3:
-            print(f"[Map] {tag} 로드 완료: {len(points)}개 꼭짓점")
+            print(f"[경고] {tag} 영역에 점이 3개 미만 -> 건너뜀")
+            continue
+        polygons[tag] = Polygon(points)
+        print(f"[Map] {tag} 로드 완료: {len(points)}개 꼭짓점")
     return polygons
 
 def person_in_polygon(xyxy, polygon: Polygon) -> bool:
@@ -192,7 +195,7 @@ def person_in_polygon(xyxy, polygon: Polygon) -> bool:
     corners = [
         (x1, y1), # 왼쪽 위
         (x2, y1), # 오른쪽 위
-        (x1, y2), # 왼쪽 위
+        (x1, y2), # 왼쪽 아래
         (x2, y2), # 오른쪽 아래
     ]
     return all(polygon.contains(Point(px, py)) for px, py in corners)
@@ -258,6 +261,16 @@ Main (실제 실행)
 def main():
     video_id = os.path.basename(SOURCE)
 
+    # Map 파일 경로 설정
+    MAP_PATH = os.path.join(ROOT_DIR, "data", "map.xml") # Map 파일 경로
+
+    # Map 파일 파싱
+    polygons = load_map_polygons(MAP_PATH)
+
+    # Map 파일이 있으면 다각형 ROI 사용, 없으면 기존 직선 ROI 사용
+    USE_POLYGON_ROI = len(polygons) > 0
+    print(f"ROI 모드: {'다각형(Map 파일)' if USE_POLYGON_ROI else '직선(기본값)'}")
+
     cap = cv2.VideoCapture(SOURCE)
     # 영상 열기 실패 시 종료
     if not cap.isOpened():
@@ -299,7 +312,11 @@ def main():
             verbose=False
         )
 
-        draw_roi(frame, x_cut)
+        # ROI 시각화: 모드에 따라 다르게
+        if USE_POLYGON_ROI:
+            draw_polygon_roi(frame, polygons)
+        else:
+            draw_roi(frame, x_cut)
 
         # results 구조: 리스트지만 보통 1개
         r0 = results[0]
@@ -321,14 +338,63 @@ def main():
                 st.last_seen_t = t
                 st.last_seen_frame = frame_idx
 
-                # line crossing (왼->오 / 오->왼)
-                if st.last_cx is not None:
-                    crossed = (st.last_cx < x_cut and cx >= x_cut) or (st.last_cx >= x_cut and cx < x_cut)
-                    if crossed and (t - st.last_line_cross_t) >= LINE_CROSS_COOLDOWN:
-                        emit(sa_events, video_id, "line_crossing", t, track_id, xyxy, extra={"line_x": x_cut})
-                        st.last_line_cross_t = t
+                # line crossing (Map 모드에서는 선 개념이 없어 스킵)
+                if not USE_POLYGON_ROI:
+                    # line crossing (왼->오 / 오->왼)
+                    if st.last_cx is not None:
+                        crossed = (st.last_cx < x_cut and cx >= x_cut) or (st.last_cx >= x_cut and cx < x_cut)
+                        if crossed and (t - st.last_line_cross_t) >= LINE_CROSS_COOLDOWN:
+                            emit(sa_events, video_id, "line_crossing", t, track_id, xyxy, extra={"line_x": x_cut})
+                            st.last_line_cross_t = t
                 st.last_cx = cx
 
+                # ROI 판정: 모드에 따라 분기
+                if USE_POLYGON_ROI:
+                    intrusion_poly = polygons.get("Intrusion")
+                    loiter_poly = polygons.get("Loitering") or polygons.get("DetectArea")
+
+                    in_intrusion = person_entering_polygon(xyxy, intrusion_poly) if intrusion_poly else False
+                    in_loiter = person_entering_polygon(xyxy, loiter_poly) if loiter_poly else False
+                else:
+                    in_intrusion = in_roi_full_body(x1_f, x_cut)
+                    in_loiter = in_roi_full_body(x1_f, x_cut)
+
+                # ROI hit
+                if in_intrusion:
+                    st.in_roi_hit += 1
+                    if st.roi_enter_t is None:
+                        st.roi_enter_t = t
+                else:
+                    st.in_roi_hit = 0
+                    st.roi_enter_t = None
+                    st.intrusion_emitted = False
+                    st.loiter_emitted = False
+                
+                # intrusion 이벤트
+                if (not st.intrusion_emitted and st.in_roi_hit >= HIT_FRAMES and (t - st.last_event_t) >= COOLDOWN_SEC):
+                    emit(sa_events, video_id, "intrusion", t, track_id, xyxy, extra={"roi": "polygon" if USE_POLYGON_ROI else "right_30"})
+                    st.intrusion_emitted = True
+                    st.last_event_t = t
+
+                # loitering 이벤트
+                if st.roi_enter_t is not None and not st.loiter_emitted:
+                    dwell = t - st.roi_enter_t
+                    if in_loiter and dwell >= LOITER_SEC and (t - st.last_event_t) >= COOLDOWN_SEC:
+                        emit(sa_events, video_id, "loitering", t, track_id, xyxy, extra={"dwell_sec": round(dwell, 3), "roi": "polygon" if USE_POLYGON_ROI else "right_30"})
+                        st.loiter_emitted = True
+                        st.last_event_t = t
+
+                draw_box(frame, xyxy, track_id, color=(0, 255, 0))
+            
+            if sa_events:
+                last = sa_events[-1]
+                cv2.putText(
+                    frame,
+                    f"EVENT: {last['event_type']} ID={last['track_id']} t={last['event_time_sec']}",
+                    (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2
+                )
+
+        """
                 # ROI hit logic (ROI 안이면 hit 증가, 밖이면 hit 초기화)
                 # if in_roi(cx, x_cut):
                 #     st.in_roi_hit += 1
@@ -368,7 +434,7 @@ def main():
             if sa_events:
                 last = sa_events[-1]
                 cv2.putText(frame, f"EVENT: {last['event_type']} ID={last['track_id']} t={last['event_time_sec']}", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,0,255), 2)
-
+        """
         writer.write(frame)
 
     cap.release()
@@ -379,6 +445,7 @@ def main():
 
     save_sa_xml(sa_events, OUT_SA_XML_PATH, video_id)
 
+    print("SA JSON: ", {OUT_SA_JSON_PATH})
     print("SA saved: ", OUT_SA_XML_PATH, "events= ", len(sa_events))
     print("VIS saved: ", OUT_VIDEO_PATH)
     print("elapsed(sec)=", round(time.time() - start_wall, 2))
