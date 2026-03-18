@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple, Optional # 변수 지정
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
+import numpy as np
 import cv2 # 영상 읽기/쓰기 + 선/글씨/박스 그리기
 import torch # GPU(CUDA) 사용 가능 여부 확인
 from ultralytics import YOLO # YOLOv8 모델 로드 + 탐지/추적
@@ -210,6 +211,32 @@ def person_entering_polygon(xyxy, polygon: Polygon) -> bool:
     cx = (x1 + x2) / 2.0
     cy = (y1 + y2) / 2.0
     return polygon.contains(Point(cx, cy))
+
+
+def draw_polygon_roi(frame, polygons: dict):
+    """
+    Map에서 읽은 다각형들을 화면에 그려줌
+
+    색상 구분:
+    - DetectArea: 파란색
+    - Intrusion: 빨간색
+    - Loitering: 노란색
+    - 기타: 흰색
+    """
+    COLOR_MAP = {
+        "DetectArea": (255, 100, 0),
+        "Intrusion": (0, 0, 255),
+        "Loitering": (0, 255, 255)
+    }
+    for tag, polygon in polygons.items():
+        color = COLOR_MAP.get(tag, (255, 255, 255)) # 색상 결정
+
+        pts = np.array(list(polygon.exterior.coords[:-1]), dtype=np.int32) # 좌표 변환
+
+        cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=2) # 선 그리기
+        label_x, label_y = pts[0] # 첫 번째 꼭짓점
+        cv2.putText(frame, tag, (int(label_x), int(label_y) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2) # 태그 이름 표시
+
 
 # 사람 1명마다 상태 저장
 @dataclass
