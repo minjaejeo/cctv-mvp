@@ -8,7 +8,7 @@ import numpy as np
 import cv2 # 영상 읽기/쓰기 + 선/글씨/박스 그리기
 import torch # GPU(CUDA) 사용 가능 여부 확인
 from ultralytics import YOLO # YOLOv8 모델 로드 + 탐지/추적
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon # 다각형 안에 점이 있는지 판단
 
 """
 Config (설정값)
@@ -16,10 +16,10 @@ Config (설정값)
 DEVICE = 0 if torch.cuda.is_available() else "cpu"
 print("DEVICE = ", DEVICE)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # 현재 이 파이썬 파일의 경로
 ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
 
-SOURCE = os.path.join(ROOT_DIR, "data", "138564-769988151_medium.mp4")
+SOURCE = os.path.join(ROOT_DIR, "data", "138564-769988151_medium.mp4") # os.path.join은 폴더명에 '/'를 추가해준다
 OUT_SA_JSON_PATH = os.path.join(ROOT_DIR, "data", "sa_ver4.json") # 이벤트 결과 저장
 OUT_SA_XML_PATH = os.path.join(ROOT_DIR, "data", "sa_ver4.xml") # 이벤트 결과 저장
 OUT_VIDEO_PATH = os.path.join(ROOT_DIR, "data", "vis_ver4.mp4") # 시각화 결과 저장
@@ -57,11 +57,20 @@ def in_roi_full_body(x1: float, x_cut: int) -> bool:
 
 # YOLO 박스는 왼쪽위(x1,y1), 오른쪽아래(x2,y2) => (cx,cy) 중심점 구하는 함수
 def bbox_center_xyxy(xyxy) -> Tuple[float, float]:
+    """
+    cx = (x1+x2)/2
+    cy = (y1+y2)/2
+    """
     x1, y1, x2, y2 = xyxy
     return (x1 + x2) / 2.0, (y1 + y2) / 2.0
 
 # 빨간 선을 x_cut 위치에 그려서 "여기부터 ROI"를 눈으로 보이게 하는 함수
 def draw_roi(frame, x_cut):
+    """
+    (0, 0, 255) = 빨간색
+    (0, 255, 0) = 초록색
+    (255, 0, 0) = 파란색
+    """
     h, w = frame.shape[:2]
     cv2.line(frame, (x_cut, 0), (x_cut, h), (0, 0, 255), 2)
     cv2.putText(frame, "ROI", (x_cut + 10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
@@ -141,8 +150,8 @@ def load_map_polygons(map_path: str) -> dict:
     if not os.path.exists(map_path):
         print(f"[경고] Map 파일 없음: {map_path} -> 기본 ROI 사용")
         return {}
-    tree = ET.parse(map_path)
-    root = tree.getroot()
+    tree = ET.parse(map_path) # XML 파일 전체를 읽어서 트리 구조로 변환
+    root = tree.getroot() # 트리의 최상단 태그 가져오기
 
     # KISA에서 정의한 영역 태그 목록
     AREA_TAGS = [
@@ -158,7 +167,7 @@ def load_map_polygons(map_path: str) -> dict:
     for tag in AREA_TAGS:
         # XML에서 해당 태그 찾기
         # find()는 없으면 None 반환
-        element = root.find(f".//{tag}") # // = 하위 어디서든 찾기
+        element = root.find(f".//{tag}") # // = 하위 어디서든 tag 찾기
         if element is None:
             continue # 이 태그가 없으면 건너뜀
 
@@ -300,6 +309,8 @@ def main():
         frame_idx += 1
         t = frame_idx / fps
 
+        print(f"\n[프레임 {frame_idx} | t={t:.2f}s]")
+
         # Tracking inference (person only via classed=[0]) 탐지 + 추적(= ID 부여)
         results = model.track(
             frame,
@@ -324,6 +335,8 @@ def main():
             ids = r0.boxes.id.tolist() # 각 사람의 id
             xyxys = r0.boxes.xyxy.tolist() # 각 사람의 박스 좌표 리스트
             confs = r0.boxes.conf.tolist() # 각 박스의 confidence
+
+            print(f" 감지된 사람: {len(ids)}명")
             
             # 사람 한 명씩 처리 (zip은 "같은 인덱스끼리 묶어서" 처리하는 도구)
             for track_id, xyxy, conf in zip(ids, xyxys, confs):
@@ -334,18 +347,25 @@ def main():
                 # 새 사람일 때만 TrackState() 생성
                 if track_id not in tracks:
                     tracks[track_id] = TrackState()
+                    print(f" [새 등장] ID={track_id}")
                 st = tracks[track_id]
                 st.last_seen_t = t
                 st.last_seen_frame = frame_idx
+
+                print(f" ID={track_id} | x1={x1_f:.0f} cx={cx:.0f} cy={cy:.0f} | conf={conf:.2f}")
+
+                print(f" ID={track_id} | x1={x1_f:.0f} cx={cx:.0f} cy={cy:.0f} | conf={conf:.2f}")
 
                 # line crossing (Map 모드에서는 선 개념이 없어 스킵)
                 if not USE_POLYGON_ROI:
                     # line crossing (왼->오 / 오->왼)
                     if st.last_cx is not None:
                         crossed = (st.last_cx < x_cut and cx >= x_cut) or (st.last_cx >= x_cut and cx < x_cut)
+                        print(f" 선 크로싱 체크: last_cx={st.last_cx:.0f} -> cx={cx:.0f} | crossed={crossed}")
                         if crossed and (t - st.last_line_cross_t) >= LINE_CROSS_COOLDOWN:
                             emit(sa_events, video_id, "line_crossing", t, track_id, xyxy, extra={"line_x": x_cut})
                             st.last_line_cross_t = t
+                            print(f" >>> LINE_CROSSING 이벤트 발생!")
                 st.last_cx = cx
 
                 # ROI 판정: 모드에 따라 분기
@@ -359,6 +379,8 @@ def main():
                     in_intrusion = in_roi_full_body(x1_f, x_cut)
                     in_loiter = in_roi_full_body(x1_f, x_cut)
 
+                print(f" ROI 판정: in_intrusion={in_intrusion} in_loiter={in_loiter}")
+
                 # ROI hit
                 if in_intrusion:
                     st.in_roi_hit += 1
@@ -369,20 +391,26 @@ def main():
                     st.roi_enter_t = None
                     st.intrusion_emitted = False
                     st.loiter_emitted = False
+
+                print(f" TrackState: hit={st.in_roi_hit} enter_t={st.roi_enter_t} intrusion={st.intrusion_emitted} loiter={st.loiter_emitted}")
                 
-                # intrusion 이벤트
+                # intrusion 이벤트 조건 3가지(1. 이미 찍은 이벤트가 아닐 것, 2. 연속 2프레임 이상 ROI 안에 있을 것, 3. 쿨다운이 지났을 것)
+                print(f" 침입 조건: 미발생={not st.intrusion_emitted} hit({st.in_roi_hit}>={HIT_FRAMES})={st.in_roi_hit >= HIT_FRAMES} cooldown={(t - st.last_event_t):.1f}s>={COOLDOWN_SEC}s")
                 if (not st.intrusion_emitted and st.in_roi_hit >= HIT_FRAMES and (t - st.last_event_t) >= COOLDOWN_SEC):
                     emit(sa_events, video_id, "intrusion", t, track_id, xyxy, extra={"roi": "polygon" if USE_POLYGON_ROI else "right_30"})
                     st.intrusion_emitted = True
                     st.last_event_t = t
+                    print(f" >>>> INTRUSION 이벤트 발생!")
 
                 # loitering 이벤트
                 if st.roi_enter_t is not None and not st.loiter_emitted:
                     dwell = t - st.roi_enter_t
+                    print(f" 배회 조건: 미발생={not st.loiter_emitted} dwell={dwell:.1f}s>={LOITER_SEC}s cooldown={(t - st.last_event_t):.1f}s>={COOLDOWN_SEC}s")
                     if in_loiter and dwell >= LOITER_SEC and (t - st.last_event_t) >= COOLDOWN_SEC:
                         emit(sa_events, video_id, "loitering", t, track_id, xyxy, extra={"dwell_sec": round(dwell, 3), "roi": "polygon" if USE_POLYGON_ROI else "right_30"})
                         st.loiter_emitted = True
                         st.last_event_t = t
+                        print(f" >>> LOITERING 이벤트 발생!")
 
                 draw_box(frame, xyxy, track_id, color=(0, 255, 0))
             
@@ -393,6 +421,9 @@ def main():
                     f"EVENT: {last['event_type']} ID={last['track_id']} t={last['event_time_sec']}",
                     (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2
                 )
+
+        else:
+            print(" 사람없음")
 
         """
                 # ROI hit logic (ROI 안이면 hit 증가, 밖이면 hit 초기화)
@@ -454,3 +485,33 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+"""
+프로그램 시작
+    ㅣ
+    ㅣ- Map XML 파싱 -> 다각형 ROI 준비
+    ㅣ- 영상 열기
+    ㅣ- YOLO 모델 로드
+    ㅣ
+    ㅣ- While 루프 (프레임 한 장씩 반복)
+        ㅣ
+        ㅣ- 프레임 읽기
+        ㅣ- YOLO로 사람 탐지 + ID 부여
+        ㅣ- ROI 선/다각형 그리기
+        ㅣ
+        ㅣ- 사람 한 명씩 처리
+                ㅣ
+                ㅣ- TrackState 가져오기 (없으면 새로 생성)
+                ㅣ- 선 넘기 판정 (line_crossing)
+                ㅣ- ROI 안/밖 판정
+                ㅣ- intrusion 조건 충족 -> emit()
+                ㅣ- loitering 조건 충족 -> emit()
+                ㅣ- 박스/ID 그리기
+
+영상종료
+    ㅣ
+    ㅣ- JSON 저장
+    ㅣ- XML 저장
+    ㅣ- 종료
+"""

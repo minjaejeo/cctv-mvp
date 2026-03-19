@@ -1,0 +1,23 @@
+<?xml version="1.0" ?>
+<KisaLibraryIndex>
+  <Library>
+    <Clip>
+      <Header>
+        <AlarmEvents>2</AlarmEvents>
+        <Filename>138564-769988151_medium.mp4</Filename>
+      </Header>
+      <Alarms>
+        <Alarm>
+          <StartTime>00:00:00</StartTime>
+          <AlarmDescription>Intrusion</AlarmDescription>
+          <AlarmDuration>00:00:00</AlarmDuration>
+        </Alarm>
+        <Alarm>
+          <StartTime>00:00:01</StartTime>
+          <AlarmDescription>Intrusion</AlarmDescription>
+          <AlarmDuration>00:00:00</AlarmDuration>
+        </Alarm>
+      </Alarms>
+    </Clip>
+  </Library>
+</KisaLibraryIndex>
