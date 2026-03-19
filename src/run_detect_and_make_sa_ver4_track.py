@@ -482,6 +482,15 @@ def main():
         """
         writer.write(frame)
 
+        # 실시간 화면 출력 크기 조절
+        # cv2.namedWindow("CCTV 분석", cv2.WINDOW_NORMAL) # 창 크기 조절 가능하게
+        # cv2.resizeWindow("CCTV 분석", 854, 480) # (854, 480): 작게, (960, 540): 중간, (1280, 720): 원본 크기 조절
+        # 실시간 화면 출력
+        cv2.imshow("CCTV 분석", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'): # q 키 누르면 종료
+            break
+
+    cv2.destroyAllWindows() # 창 닫기
     cap.release()
     writer.release()
 
