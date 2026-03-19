@@ -3,18 +3,23 @@
   <Library>
     <Clip>
       <Header>
-        <AlarmEvents>2</AlarmEvents>
-        <Filename>138564-769988151_medium.mp4</Filename>
+        <AlarmEvents>3</AlarmEvents>
+        <Filename>163198-827112981_medium.mp4</Filename>
       </Header>
       <Alarms>
         <Alarm>
-          <StartTime>00:00:00</StartTime>
+          <StartTime>00:00:08</StartTime>
           <AlarmDescription>Intrusion</AlarmDescription>
           <AlarmDuration>00:00:00</AlarmDuration>
         </Alarm>
         <Alarm>
-          <StartTime>00:00:01</StartTime>
+          <StartTime>00:00:08</StartTime>
           <AlarmDescription>Intrusion</AlarmDescription>
+          <AlarmDuration>00:00:00</AlarmDuration>
+        </Alarm>
+        <Alarm>
+          <StartTime>00:00:11</StartTime>
+          <AlarmDescription>Loitering</AlarmDescription>
           <AlarmDuration>00:00:00</AlarmDuration>
         </Alarm>
       </Alarms>

@@ -19,7 +19,9 @@ print("DEVICE = ", DEVICE)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # 현재 이 파이썬 파일의 경로
 ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
 
-SOURCE = os.path.join(ROOT_DIR, "data", "138564-769988151_medium.mp4") # os.path.join은 폴더명에 '/'를 추가해준다
+# SOURCE = os.path.join(ROOT_DIR, "data", "138564-769988151_medium.mp4") # os.path.join은 폴더명에 '/'를 추가해준다
+# SOURCE = os.path.join(ROOT_DIR, "data", "73531-548642354_medium.mp4") # os.path.join은 폴더명에 '/'를 추가해준다
+SOURCE = os.path.join(ROOT_DIR, "data", "163198-827112981_medium.mp4") # os.path.join은 폴더명에 '/'를 추가해준다
 OUT_SA_JSON_PATH = os.path.join(ROOT_DIR, "data", "sa_ver4.json") # 이벤트 결과 저장
 OUT_SA_XML_PATH = os.path.join(ROOT_DIR, "data", "sa_ver4.xml") # 이벤트 결과 저장
 OUT_VIDEO_PATH = os.path.join(ROOT_DIR, "data", "vis_ver4.mp4") # 시각화 결과 저장
@@ -29,11 +31,13 @@ CONF_THRES = 0.25 # 25% 이상 사람일 확신이면 일단 사용
 IOU_THRES = 0.5 # 중복 제거
 
 # ROI: 오른쪽 30%
-INTRUSION_REGION_X_RATIO = 0.7 # 화면 가로 100%라고 가정하면 왼쪽부터 70% 지점부터 오른쪽(나머지 30%)을 ROI로 잡는다
+# INTRUSION_REGION_X_RATIO = 0.7 # 화면 가로 100%라고 가정하면 왼쪽부터 70% 지점부터 오른쪽(나머지 30%)을 ROI로 잡는다
+# ROI: 왼쪽 30%
+INTRUSION_REGION_X_RATIO = 0.5
 
 # 이벤트 파라미터
 HIT_FRAMES = 2 # ROI 진입 안정화(2프레임 연속) e.g. 2프레임 연속 ROI 안에 있으면 이벤트 인정
-COOLDOWN_SEC = 2.0 # 같은 이벤트 과다 방지 e.g. 이벤트 한 번 찍고 몇 초 동안은 또 안 찍기
+COOLDOWN_SEC = 1.0 # 같은 이벤트 과다 방지 e.g. 이벤트 한 번 찍고 몇 초 동안은 또 안 찍기
 LOITER_SEC = 3.0 # ROI 안에 3초 이상이면 Loitering 
 LINE_CROSS_COOLDOWN = 1.0 # 라인 크로싱 연속 방지 (선 넘는 이벤트가 연속으로 너무 많이 찍히는 걸 막는 잠금 시간)
 
@@ -44,12 +48,20 @@ TRACKER_CFG = "bytetrack.yaml" # ultralytics 내장 (YOLO 탐지 결과를 "같�
 """
 Helpers (자주 쓰는 작은 함수들)
 """
-def in_roi_full_body(x1: float, x_cut: int) -> bool:
+# 오른쪽 ROI 기준
+# def in_roi_full_body(x1: float, x_cut: int) -> bool:
+#     """
+#     중심점 기준이 아니라 전신 기준으로 수정
+#     사람 박스의 왼쪽 끝(x1)이 경계선을 완전히 넘었을 때
+#     """
+#     return x1 >= x_cut
+# 왼쪽 ROI 기준
+def in_roi_full_body(x2: float, x_cut: int) -> bool:
     """
     중심점 기준이 아니라 전신 기준으로 수정
-    사람 박스의 왼쪽 끝(x1)이 경계선을 완전히 넘었을 때
+    사람 박스의 오른쪽 끝(x2)이 경계선을 완전히 넘었을 때
     """
-    return x1 >= x_cut
+    return x2 <= x_cut
 
 # 사람 박스의 중심 x 좌표(cx)가 x_cut보다 오른쪽이면 ROI 안이라고 판단하는 함수
 # def in_roi(cx: float, x_cut: int) -> bool:
@@ -309,7 +321,7 @@ def main():
         frame_idx += 1
         t = frame_idx / fps
 
-        print(f"\n[프레임 {frame_idx} | t={t:.2f}s]")
+        # print(f"\n[프레임 {frame_idx} | t={t:.2f}s]")
 
         # Tracking inference (person only via classed=[0]) 탐지 + 추적(= ID 부여)
         results = model.track(
@@ -343,6 +355,7 @@ def main():
                 track_id = int(track_id)
                 cx, cy = bbox_center_xyxy(xyxy)
                 x1_f = xyxy[0] # 바운딩박스 왼쪽 끝 (float)
+                x2_f = xyxy[2] #xyxy = [x1, y1, x2, y2] 이므로 인덱스 2가 x2
                 # st = tracks.get(track_id, TrackState()) # 새 사람이 있든 없든 매번 새로 만드는 오류 (메모리 낭비)
                 # 새 사람일 때만 TrackState() 생성
                 if track_id not in tracks:
@@ -352,20 +365,19 @@ def main():
                 st.last_seen_t = t
                 st.last_seen_frame = frame_idx
 
-                print(f" ID={track_id} | x1={x1_f:.0f} cx={cx:.0f} cy={cy:.0f} | conf={conf:.2f}")
-
-                print(f" ID={track_id} | x1={x1_f:.0f} cx={cx:.0f} cy={cy:.0f} | conf={conf:.2f}")
+                # print(f" ID={track_id} | x1={x1_f:.0f} cx={cx:.0f} cy={cy:.0f} | conf={conf:.2f}")
+                print(f" ID={track_id} | x1={x2_f:.0f} cx={cx:.0f} cy={cy:.0f} | conf={conf:.2f}")
 
                 # line crossing (Map 모드에서는 선 개념이 없어 스킵)
                 if not USE_POLYGON_ROI:
                     # line crossing (왼->오 / 오->왼)
                     if st.last_cx is not None:
                         crossed = (st.last_cx < x_cut and cx >= x_cut) or (st.last_cx >= x_cut and cx < x_cut)
-                        print(f" 선 크로싱 체크: last_cx={st.last_cx:.0f} -> cx={cx:.0f} | crossed={crossed}")
+                        # print(f" 선 크로싱 체크: last_cx={st.last_cx:.0f} -> cx={cx:.0f} | crossed={crossed}")
                         if crossed and (t - st.last_line_cross_t) >= LINE_CROSS_COOLDOWN:
                             emit(sa_events, video_id, "line_crossing", t, track_id, xyxy, extra={"line_x": x_cut})
                             st.last_line_cross_t = t
-                            print(f" >>> LINE_CROSSING 이벤트 발생!")
+                            print(f" >>> LINE_CROSSING 이벤트 발생! t={t:.2f}s ID={track_id}")
                 st.last_cx = cx
 
                 # ROI 판정: 모드에 따라 분기
@@ -376,10 +388,12 @@ def main():
                     in_intrusion = person_entering_polygon(xyxy, intrusion_poly) if intrusion_poly else False
                     in_loiter = person_entering_polygon(xyxy, loiter_poly) if loiter_poly else False
                 else:
-                    in_intrusion = in_roi_full_body(x1_f, x_cut)
-                    in_loiter = in_roi_full_body(x1_f, x_cut)
+                    # in_intrusion = in_roi_full_body(x1_f, x_cut)
+                    in_intrusion = in_roi_full_body(x2_f, x_cut)
+                    # in_loiter = in_roi_full_body(x1_f, x_cut)
+                    in_loiter = in_roi_full_body(x2_f, x_cut)
 
-                print(f" ROI 판정: in_intrusion={in_intrusion} in_loiter={in_loiter}")
+                # print(f" ROI 판정: in_intrusion={in_intrusion} in_loiter={in_loiter}")
 
                 # ROI hit
                 if in_intrusion:
@@ -392,25 +406,25 @@ def main():
                     st.intrusion_emitted = False
                     st.loiter_emitted = False
 
-                print(f" TrackState: hit={st.in_roi_hit} enter_t={st.roi_enter_t} intrusion={st.intrusion_emitted} loiter={st.loiter_emitted}")
+                # print(f" TrackState: hit={st.in_roi_hit} enter_t={st.roi_enter_t} intrusion={st.intrusion_emitted} loiter={st.loiter_emitted}")
                 
                 # intrusion 이벤트 조건 3가지(1. 이미 찍은 이벤트가 아닐 것, 2. 연속 2프레임 이상 ROI 안에 있을 것, 3. 쿨다운이 지났을 것)
-                print(f" 침입 조건: 미발생={not st.intrusion_emitted} hit({st.in_roi_hit}>={HIT_FRAMES})={st.in_roi_hit >= HIT_FRAMES} cooldown={(t - st.last_event_t):.1f}s>={COOLDOWN_SEC}s")
+                # print(f" 침입 조건: 미발생={not st.intrusion_emitted} hit({st.in_roi_hit}>={HIT_FRAMES})={st.in_roi_hit >= HIT_FRAMES} cooldown={(t - st.last_event_t):.1f}s>={COOLDOWN_SEC}s")
                 if (not st.intrusion_emitted and st.in_roi_hit >= HIT_FRAMES and (t - st.last_event_t) >= COOLDOWN_SEC):
                     emit(sa_events, video_id, "intrusion", t, track_id, xyxy, extra={"roi": "polygon" if USE_POLYGON_ROI else "right_30"})
                     st.intrusion_emitted = True
                     st.last_event_t = t
-                    print(f" >>>> INTRUSION 이벤트 발생!")
+                    print(f" >>>> INTRUSION 이벤트 발생! t={t:.2f}s ID={track_id}")
 
                 # loitering 이벤트
                 if st.roi_enter_t is not None and not st.loiter_emitted:
                     dwell = t - st.roi_enter_t
-                    print(f" 배회 조건: 미발생={not st.loiter_emitted} dwell={dwell:.1f}s>={LOITER_SEC}s cooldown={(t - st.last_event_t):.1f}s>={COOLDOWN_SEC}s")
+                    # print(f" 배회 조건: 미발생={not st.loiter_emitted} dwell={dwell:.1f}s>={LOITER_SEC}s cooldown={(t - st.last_event_t):.1f}s>={COOLDOWN_SEC}s")
                     if in_loiter and dwell >= LOITER_SEC and (t - st.last_event_t) >= COOLDOWN_SEC:
                         emit(sa_events, video_id, "loitering", t, track_id, xyxy, extra={"dwell_sec": round(dwell, 3), "roi": "polygon" if USE_POLYGON_ROI else "right_30"})
                         st.loiter_emitted = True
                         st.last_event_t = t
-                        print(f" >>> LOITERING 이벤트 발생!")
+                        print(f" >>> LOITERING 이벤트 발생! t={t:.2f}s ID={track_id}")
 
                 draw_box(frame, xyxy, track_id, color=(0, 255, 0))
             
