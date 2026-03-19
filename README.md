@@ -52,6 +52,8 @@ CCTV_MVP
 
 Download a sample video from:
 (https://pixabay.com/ko/videos/%ec%82%ac%eb%9e%8c%eb%93%a4-%ea%b1%b7%eb%8a%94-%ec%8b%a4%eb%a3%a8%ec%97%a3-%ec%a0%9c%eb%b0%a9-138564/)
+(https://pixabay.com/ko/videos/%eb%82%a8%ec%84%b1-%eb%b3%b5%eb%8f%84-%ec%bb%a4%ed%94%bc-%ed%95%b8%eb%93%9c%ed%8f%b0-73531/)
+(https://pixabay.com/ko/videos/%ed%9d%90%eb%a6%84-%ea%b0%95%eb%91%91-%eb%96%a8%ec%96%b4%ec%a7%80%eb%8b%a4-%eb%ac%bc-163198/)
 
 ---
 
