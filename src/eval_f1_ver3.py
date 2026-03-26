@@ -257,20 +257,111 @@ def main():
 
     # 이벤트 타입별 리포트
     # (TP는 pair의 GT event_type 기준으로 카운트)
-    # per_type = defaultdict(lambda: {"tp": 0, "fp": 0, "fn": 0})
+    per_type = defaultdict(lambda: {"tp": 0, "fp": 0, "fn": 0})
 
-    # for g, s in tp_pairs:
-    #     per_type[g["event_type"]]["tp"] += 1
-    # for s in fp_list:
-    #     per_type[s["event_type"]]["fp"] += 1
-    # for g in fn_list:
-    #     per_type[g["event_type"]]["fn"] += 1
+    for g, s in tp_pairs:
+        per_type[g["event_type"]]["tp"] += 1
+    for s in fp_list:
+        per_type[s["event_type"]]["fp"] += 1
+    for g in fn_list:
+        per_type[g["event_type"]]["fn"] += 1
 
     # print("\n===== By event_type =====")
     # for et, c in sorted(per_type.items()):
     #     p2, r2, f12 = f1_score(c["tp"], c["fp"], c["fn"])
     #     print(f"- {et}: TP={c['tp']}, FP={c['fp']}, FN={c['fn']} | "
     #           f"P={p2:.3f}, R={r2:.3f}, F1={f12*100:.2f}")
+
+    # --- 보고서 내용 구성 ---
+    lines = []
+    lines.append("=" * 55)
+    lines.append(" KISA 지능형 CCTV 침입 감지 성능 평가 보고서 ")
+    lines.append(f" 평가 일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("=" * 55)
+
+    lines.append("")
+    lines.append("[1] 파일 정보")
+    lines.append(f" GT 파일 : {os.path.basename(GT_PATH)}  ({len(gt)}개 이벤트)")
+    lines.append(f" SA 파일 : {os.path.basename(SA_PATH)} ({len(sa)}개 이벤트)")
+    lines.append(f" 허용오차: GT 기준 -{EARLY}초 ~ + {LATE}초")
+    lines.append(f" 합격기준: F1 {PASS_F1}점 이상")
+
+    lines.append("")
+    lines.append("[2] 전체 결과")
+    lines.append(f" TP (정확히 감지) : {tp}개")
+    lines.append(f" FP (오탐, 잘못감지): {fp}개 <- GT에 없는데 찍힌 것")
+    lines.append(f" FN (미탐, 놓침) : {fn}개 <- GT에 있는데 못 찍은 것")
+    lines.append(f" Precision : {p:.3f} (찍은 것 중 맞춘 비율)")
+    lines.append(f" Recall : {r:.3f} (정답 중 맞춘 비율)")
+    lines.append(f" F1 Score : {f1_100:.2f}점 / 100점")
+    lines.append(f" 최종 결과 : {passed}")
+
+    lines.append("")
+    lines.append("[3] 이벤트 타입별 결과")
+    for et, c in sorted(per_type.items()):
+        p2, r2, f12 = f1_score(c["tp"], c["fp"], c["fn"])
+        passed2 = "pass" if f12 * 100 >= PASS_F1 else "fail"
+        lines.append(f" [{et}]")
+        lines.append(f" TP={c['tp']} FP={c['fp']} FN={c['fn']}")
+        lines.append(f" Precision={p2:.3f} Recall={r2:.3f}"
+                     f"F1={f12*100:.2f}점 {passed2}")
+        
+    lines.append("")
+    lines.append("[4] 매칭 상세 내역")
+
+    lines.append(" TP - 정확히 감지한 이벤트")
+    if tp_pairs:
+        for g, s in tp_pairs:
+            dt = s["event_time_sec"] - g["event_time_sec"]
+            lines.append(f" [{g['event_type']}]"
+                         f"GT={g['event_time_sec']:.3f}s"
+                         f"SA={s['event_time_sec']:.3f}s"
+                         f"오차={dt:+.3f}s")
+    else:
+        lines.append("없음")
+
+    lines.append(" FP - 잘못 감지한 이벤트 (없어야 했는데 찍힌 것)")
+    if fp_list:
+        for s in fp_list:
+            lines.append(f" [{s['event_type']}]"
+                         f"SA={s['event_time_sec']:.3f}"
+                         f"video={s['video_id']}")
+    else:
+        lines.append("없음")
+
+    lines.append(" FN - 놓친 이벤트 (찍어야 했는데 못 찍은 것)")
+    if fn_list:
+        for g in fn_list:
+            lines.append(f" [{g['event_type']}]"
+                         f"GT={g['event_time_sec']:.3f}s"
+                         f"video={g['video_id']}")
+    else:
+        lines.append("없음")
+
+    lines.append("")
+    lines.append("[5] 개선 방향 제안")
+    if fp > 0:
+        lines.append(f" - FP {fp}개: 오탐이 있습니다.")
+        lines.append(f" -> COOLDOWN_SEC 값을 높이거나")
+        lines.append(f" HIT_FRAMES 값을 높여서 민감도를 낮춰보세요.")
+    if fn > 0:
+        lines.append(f" - FN {fn}개: 미탐이 있습니다.")
+        lines.append(f" -> CONF_THRES 값을 낮추거나")
+        lines.append(f" HIT_FRAMES 값을 낮춰서 민감도를 높여보세요.")
+    if fp == 0 and fn == 0:
+        lines.append(" - FP/FN 모두 없음. 현재 설정값이 최적입니다!")
+
+    lines.append("")
+    lines.append("=" * 50)
+
+    # 터미널 출력
+    for line in lines:
+        print(line)
+
+
+
+    
+
         
 
 if __name__ == "__main__":
